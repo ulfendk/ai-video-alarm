@@ -1,0 +1,23 @@
+name: "AI Video Alarm Panel"
+version: "0.1.0"
+slug: "ai_video_alarm_panel"
+description: >-
+  Thin ingress panel/reverse-proxy into the ai-video-alarm alarm-core
+  service, which runs on separate hardware. This add-on does not run any
+  of the actual workload (no Frigate, no inference, no archive storage) —
+  see /docs/architecture.md in the main repo.
+url: "https://github.com/ulfendk/ai-video-alarm"
+arch:
+  - amd64
+  - aarch64
+init: false
+ingress: true
+ingress_port: 8091
+panel_icon: "mdi:cctv"
+panel_title: "AI Video Alarm"
+options:
+  alarm_core_url: "http://change-me:8090"
+  auth_token: ""
+schema:
+  alarm_core_url: "url"
+  auth_token: "str"
