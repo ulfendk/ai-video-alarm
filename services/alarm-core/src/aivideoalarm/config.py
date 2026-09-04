@@ -40,6 +40,13 @@ class Settings(BaseSettings):
 
     public_media_base_url: str = ""
 
+    # Topic base HA's "MQTT statestream" integration publishes entity
+    # states to (HA's own default is "homeassistant" — same prefix as our
+    # Discovery configs, but under <domain>/<object_id>/state rather than
+    # <component>/<object_id>/config, so there's no collision). Change
+    # this if your bridge uses a different convention.
+    ha_statestream_base_topic: str = "homeassistant"
+
     config_path: Path = Path("/config/alarm-core.yaml")
 
     api_host: str = "0.0.0.0"
@@ -89,6 +96,13 @@ class EscalationPolicy(BaseModel):
     sensitive_zones: list[str] = Field(default_factory=list)
     night_escalation_bias: float = 0.15  # widens the ambiguous band at night
     debounce_seconds: int = 60
+    # Simple clock-hour night window (local time), used to bias Tier-1/2
+    # escalation per docs/architecture.md "Low-light handling strategy".
+    # A sun-elevation-based (civil twilight) switch would be more precise
+    # but needs HA to publish sun.sun over MQTT statestream; these are a
+    # deployment-agnostic fallback, override per-season if needed.
+    night_start_hour: int = 20
+    night_end_hour: int = 7
 
 
 class AppConfig(BaseModel):

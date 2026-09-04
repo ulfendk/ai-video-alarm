@@ -13,6 +13,11 @@ import time
 
 from aivideoalarm.config import DoorWindowSensor
 
+# States an HA binary_sensor (door/window contact) reports as "triggered".
+# Matches whatever your statestream bridge forwards the entity's `state`
+# attribute as — HA itself normally reports "on"/"off".
+OPEN_STATES = {"on", "open", "true", "1"}
+
 
 class Debouncer:
     def __init__(self, window_seconds: int) -> None:

@@ -25,6 +25,7 @@ ALARM_COMMAND_TOPIC = f"{APP_PREFIX}/system/alarm_panel/set"
 
 FrigateEventHandler = Callable[[dict[str, Any]], None]
 AlarmCommandHandler = Callable[[str], None]
+DoorWindowStateHandler = Callable[[str, str], None]  # (entity_id, state)
 
 
 class AlarmMqttClient:
@@ -45,6 +46,8 @@ class AlarmMqttClient:
 
         self._on_frigate_event: FrigateEventHandler | None = None
         self._on_alarm_command: AlarmCommandHandler | None = None
+        self._on_door_window_state: DoorWindowStateHandler | None = None
+        self._door_window_topics: dict[str, str] = {}  # topic -> entity_id
 
         self._client.on_connect = self._handle_connect
         self._client.on_message = self._handle_message
@@ -54,6 +57,24 @@ class AlarmMqttClient:
 
     def on_alarm_command(self, handler: AlarmCommandHandler) -> None:
         self._on_alarm_command = handler
+
+    def on_door_window_state(self, handler: DoorWindowStateHandler) -> None:
+        self._on_door_window_state = handler
+
+    def configure_door_window_topics(self, entity_ids: list[str], base_topic: str) -> None:
+        """Builds the statestream topic for each door/window entity_id
+        (domain.object_id -> <base_topic>/<domain>/<object_id>/state) so
+        _handle_connect subscribes to them and _handle_message can map an
+        incoming message back to its entity_id. See
+        Settings.ha_statestream_base_topic in config.py."""
+        self._door_window_topics.clear()
+        for entity_id in entity_ids:
+            domain, _, object_id = entity_id.partition(".")
+            if not object_id:
+                logger.warning("Skipping malformed entity_id: %r", entity_id)
+                continue
+            topic = f"{base_topic}/{domain}/{object_id}/state"
+            self._door_window_topics[topic] = entity_id
 
     def connect(self) -> None:
         self._client.connect(self._settings.mqtt_host, self._settings.mqtt_port)
@@ -68,6 +89,8 @@ class AlarmMqttClient:
         logger.info("MQTT connected: %s", reason_code)
         client.subscribe("frigate/events")
         client.subscribe(ALARM_COMMAND_TOPIC)
+        for topic in self._door_window_topics:
+            client.subscribe(topic)
         self.publish(STATUS_TOPIC, "online", retain=True)
 
     def _handle_message(self, client, userdata, msg) -> None:
@@ -83,6 +106,10 @@ class AlarmMqttClient:
         elif msg.topic == ALARM_COMMAND_TOPIC:
             if self._on_alarm_command is not None:
                 self._on_alarm_command(msg.payload.decode())
+        elif msg.topic in self._door_window_topics:
+            if self._on_door_window_state is not None:
+                entity_id = self._door_window_topics[msg.topic]
+                self._on_door_window_state(entity_id, msg.payload.decode().strip())
 
     def publish(self, topic: str, payload: str | dict, retain: bool = False) -> None:
         if isinstance(payload, dict):

@@ -12,8 +12,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import sqlite3
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 
 import anthropic
 
@@ -42,23 +44,50 @@ Respond with ONLY a JSON object of the form:
 
 
 class DailyCallBudget:
-    """In-memory daily call counter. TODO: back this with the SQLite
-    archive DB so the cap survives a restart mid-day."""
+    """Daily Tier-2 call counter, persisted to SQLite (the same DB the
+    archive uses) so the cap survives a restart mid-day rather than
+    silently resetting."""
 
-    def __init__(self, daily_cap: int) -> None:
+    _SCHEMA = """
+    CREATE TABLE IF NOT EXISTS cloud_call_budget (
+        day TEXT PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 0
+    );
+    """
+
+    def __init__(self, daily_cap: int, db_path: Path) -> None:
         self._daily_cap = daily_cap
-        self._day: date | None = None
-        self._count = 0
+        self._db_path = db_path
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self._db_path) as conn:
+            conn.executescript(self._SCHEMA)
 
     def try_consume(self) -> bool:
-        today = date.today()
-        if self._day != today:
-            self._day = today
-            self._count = 0
-        if self._count >= self._daily_cap:
-            return False
-        self._count += 1
+        today = date.today().isoformat()
+        with sqlite3.connect(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT count FROM cloud_call_budget WHERE day = ?", (today,)
+            ).fetchone()
+            count = row[0] if row else 0
+            if count >= self._daily_cap:
+                return False
+            conn.execute(
+                """INSERT INTO cloud_call_budget (day, count) VALUES (?, 1)
+                   ON CONFLICT(day) DO UPDATE SET count = count + 1""",
+                (today,),
+            )
         return True
+
+
+def is_night(policy: EscalationPolicy, when: datetime | None = None) -> bool:
+    """Simple clock-hour night window — see EscalationPolicy.night_start_hour
+    / night_end_hour in config.py for the reasoning."""
+    when = when or datetime.now()
+    hour = when.hour
+    start, end = policy.night_start_hour, policy.night_end_hour
+    if start <= end:
+        return start <= hour < end
+    return hour >= start or hour < end  # window spans midnight
 
 
 def should_escalate(
@@ -94,6 +123,7 @@ class CloudVisionProvider:
         zone: str,
         label: str,
         alarm_state: AlarmState,
+        is_night: bool = False,
         extra_context: str = "",
     ) -> TierResult:
         raise NotImplementedError
@@ -110,6 +140,7 @@ class AnthropicVisionProvider(CloudVisionProvider):
         zone: str,
         label: str,
         alarm_state: AlarmState,
+        is_night: bool = False,
         extra_context: str = "",
     ) -> TierResult:
         prompt = PROMPT_TEMPLATE.format(
@@ -117,7 +148,7 @@ class AnthropicVisionProvider(CloudVisionProvider):
             zone=zone,
             label=label,
             alarm_state=alarm_state.value,
-            time_of_day="night" if extra_context else "day",  # TODO: pass real value
+            time_of_day="night" if is_night else "day",
             extra_context=extra_context or "none",
         )
         image_b64 = base64.b64encode(image_bytes).decode()

@@ -95,3 +95,7 @@ escalation:
   sensitive_zones: [front_porch, driveway]
   night_escalation_bias: 0.15
   debounce_seconds: 60
+  # Clock-hour night window (local time) — widens escalation at night per
+  # docs/architecture.md. Adjust to your actual dusk/dawn.
+  night_start_hour: 20
+  night_end_hour: 7

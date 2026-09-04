@@ -30,6 +30,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ARCHIVE_QUOTA_GB=${ARCHIVE_QUOTA_GB:-30}
       - CLOUD_AI_DAILY_CALL_CAP=${CLOUD_AI_DAILY_CALL_CAP:-20}
+      - HA_STATESTREAM_BASE_TOPIC=${HA_STATESTREAM_BASE_TOPIC:-homeassistant}
       - CONFIG_PATH=/config/alarm-core.yaml
     volumes:
       - ./config/alarm-core.example.yaml:/config/alarm-core.yaml:ro

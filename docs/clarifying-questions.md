@@ -25,3 +25,14 @@ choices:
 None of these block the current scaffold — they're all `# TODO` /
 placeholder fields in the compose file and example config, to be filled in
 when wiring this up to the live HA instance.
+
+## Note on door/window correlation (item 2)
+
+The wiring assumes your HA instance forwards entity state changes to MQTT
+under `<base_topic>/<domain>/<object_id>/state` (HA's "MQTT statestream"
+integration's default layout, `base_topic` defaults to `homeassistant` —
+configurable via `HA_STATESTREAM_BASE_TOPIC` in `.env` if you use
+something else, e.g. a different bridge or a custom base topic). If you
+don't already have MQTT statestream (or equivalent) enabled, that's an
+extra HA-side integration to turn on, not something `alarm-core` can
+substitute for — worth confirming when you get to deployment.

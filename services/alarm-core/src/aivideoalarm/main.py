@@ -25,7 +25,7 @@ from aivideoalarm.frigate_client import FrigateClient
 from aivideoalarm.mqtt_client import AlarmMqttClient
 from aivideoalarm.pipeline import fusion, tier0_zone_filter, tier1_local, tier2_cloud
 from aivideoalarm.pipeline.types import Decision, FrigateEvent
-from aivideoalarm.suppression.rules import Debouncer, DoorWindowCorrelator
+from aivideoalarm.suppression.rules import OPEN_STATES, Debouncer, DoorWindowCorrelator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,13 +50,20 @@ class AlarmCoreApp:
         else:
             logger.warning("No ANTHROPIC_API_KEY configured; Tier 2 escalation disabled.")
             self.cloud_provider = tier2_cloud.NoOpVisionProvider()
-        self.call_budget = tier2_cloud.DailyCallBudget(self.settings.cloud_ai_daily_call_cap)
+        self.call_budget = tier2_cloud.DailyCallBudget(
+            self.settings.cloud_ai_daily_call_cap, self.settings.db_path
+        )
 
         self._cameras_by_name = {c.frigate_camera: c for c in self.app_config.cameras}
         self._loop: asyncio.AbstractEventLoop | None = None
 
         self.mqtt.on_frigate_event(self._on_frigate_event_sync)
         self.mqtt.on_alarm_command(self._on_alarm_command)
+        self.mqtt.on_door_window_state(self._on_door_window_state)
+        self.mqtt.configure_door_window_topics(
+            [s.entity_id for s in self.app_config.door_window_sensors],
+            self.settings.ha_statestream_base_topic,
+        )
 
     def publish_discovery(self) -> None:
         self.mqtt.publish_discovery_alarm_panel()
@@ -71,6 +78,10 @@ class AlarmCoreApp:
             logger.warning("Ignoring unknown alarm command: %r", command)
             return
         self.mqtt.publish_alarm_state(new_state.value)
+
+    def _on_door_window_state(self, entity_id: str, state: str) -> None:
+        if state.lower() in OPEN_STATES:
+            self.door_window.record_sensor_open(entity_id)
 
     def _on_frigate_event_sync(self, payload: dict) -> None:
         """paho-mqtt callbacks are sync; bridge into the async pipeline."""
@@ -102,12 +113,15 @@ class AlarmCoreApp:
             tier1 = tier1_local.evaluate(event, camera, snapshot, boxes=[])
 
             if tier1.decision == Decision.AMBIGUOUS:
-                is_night = False  # TODO: derive from HA's sun.sun, per ADR
+                # Clock-hour approximation (config.py EscalationPolicy);
+                # swap for sun.sun-based civil twilight if/when HA
+                # publishes it over the statestream bridge.
+                night = tier2_cloud.is_night(self.app_config.escalation)
                 if tier2_cloud.should_escalate(
-                    tier1.confidence, zone, self.alarm_state.state, self.app_config.escalation, is_night
+                    tier1.confidence, zone, self.alarm_state.state, self.app_config.escalation, night
                 ) and self.call_budget.try_consume():
                     tier2 = await self.cloud_provider.classify(
-                        snapshot, event.camera, zone, event.label, self.alarm_state.state
+                        snapshot, event.camera, zone, event.label, self.alarm_state.state, is_night=night
                     )
 
         outcome = fusion.fuse(event, tier0, tier1, tier2)
