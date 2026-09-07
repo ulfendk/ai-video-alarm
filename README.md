@@ -21,6 +21,9 @@ alarm entities back to Home Assistant over MQTT.
 - [`docs/clarifying-questions.md`](docs/clarifying-questions.md) — what's
   still needed (real camera/zone names, entity IDs, credentials) before
   this scaffold becomes a running deployment.
+- [`docs/deployment/portainer.md`](docs/deployment/portainer.md) —
+  running `alarm-core` on a Docker/Portainer host, pulling the published
+  image from GHCR.
 
 ## Layout
 
@@ -30,9 +33,19 @@ services/alarm-core/   Python service: the verification pipeline, MQTT
 addon/                  Thin Home Assistant add-on — ingress panel/proxy
                         only, runs no workload.
 config/                 User-tunable config (cameras, zones, rules).
-docker-compose.yml       Compose stack for the alarm-core side (Frigate
-                        itself is assumed already running).
+docker-compose.yml       Production/Portainer compose file — pulls the
+                        image from GHCR, no build context needed.
+docker-compose.override.yml  Local-dev-only: adds a build from source,
+                        auto-loaded by `docker compose up` in this repo.
 ```
+
+## Image
+
+`services/alarm-core` publishes to
+[`ghcr.io/ulfendk/ai-video-alarm-core`](https://github.com/ulfendk/ai-video-alarm/pkgs/container/ai-video-alarm-core)
+via `.github/workflows/docker-publish.yml`. See
+[`docs/deployment/portainer.md`](docs/deployment/portainer.md) for how to
+run it.
 
 ## Status
 
