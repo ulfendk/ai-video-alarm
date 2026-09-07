@@ -1,0 +1,16 @@
+# Auto-loaded by `docker compose up`/`build` when run from this directory
+# (Compose's standard override convention) — adds a local build on top of
+# docker-compose.yml's GHCR image reference, so local development uses
+# your working tree instead of the published image.
+#
+# This file is irrelevant to Portainer: a Portainer stack references a
+# single compose file/path and never picks up an override sitting next to
+# it in the repo. Delete this file (or run `docker compose -f
+# docker-compose.yml up` explicitly) if you want to test against the
+# published image locally instead.
+
+services:
+  alarm-core:
+    build:
+      context: ./services/alarm-core
+    image: aivideoalarm/alarm-core:dev

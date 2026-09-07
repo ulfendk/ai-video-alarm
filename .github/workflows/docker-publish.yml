@@ -1,0 +1,70 @@
+name: Build and publish alarm-core image
+
+# Publishes ghcr.io/<owner>/ai-video-alarm-core. See
+# docs/deployment/portainer.md for how to consume it.
+#
+# - Pull requests: build only, never push — validates the Dockerfile
+#   without touching the registry.
+# - Push to main: build and push, tagged `latest` + the short commit sha.
+# - Tags matching v*: build and push, tagged with the semver tag too.
+# - Manual (workflow_dispatch): build and push from any branch, tagged
+#   with the branch name + short sha (never `latest`, which is reserved
+#   for the default branch) — useful for trying a change on a real
+#   Portainer host before merging.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "services/alarm-core/**"
+      - ".github/workflows/docker-publish.yml"
+  pull_request:
+    paths:
+      - "services/alarm-core/**"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch: {}
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ai-video-alarm-core
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/alarm-core
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

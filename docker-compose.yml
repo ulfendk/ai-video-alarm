@@ -1,0 +1,66 @@
+# Production/Portainer-ready compose file: pulls the prebuilt image from
+# GHCR, no build context required. This is the file to point a Portainer
+# "Repository" stack at, or paste into its Web editor — see
+# docs/deployment/portainer.md.
+#
+# For local development, `docker-compose.override.yml` (auto-loaded by
+# `docker compose up` when run from this directory) adds a `build:` on
+# top so you get your local source instead of the published image.
+# Portainer, given only this file, never sees that override.
+
+networks:
+  aivideoalarm:
+    driver: bridge
+
+services:
+  # Frigate is assumed to already be running in this deployment (per
+  # docs/adr/0001-extend-not-replace-frigate.md). It is referenced here,
+  # not managed by this compose file, so this project doesn't fight with
+  # an existing Frigate setup.
+
+  alarm-core:
+    image: ghcr.io/${GHCR_OWNER:-ulfendk}/ai-video-alarm-core:${IMAGE_TAG:-latest}
+    container_name: aivideoalarm-core
+    restart: unless-stopped
+    networks:
+      - aivideoalarm
+    environment:
+      - FRIGATE_URL=${FRIGATE_URL:-http://frigate.local:5000}
+      - MQTT_HOST=${MQTT_HOST:-mosquitto.local}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ARCHIVE_QUOTA_GB=${ARCHIVE_QUOTA_GB:-30}
+      - CLOUD_AI_DAILY_CALL_CAP=${CLOUD_AI_DAILY_CALL_CAP:-20}
+      - HA_STATESTREAM_BASE_TOPIC=${HA_STATESTREAM_BASE_TOPIC:-homeassistant}
+      - PUBLIC_MEDIA_BASE_URL=${PUBLIC_MEDIA_BASE_URL:-}
+      - CONFIG_PATH=/config/alarm-core.yaml
+    volumes:
+      # Point these at real paths on the server (e.g. under /srv or a NAS
+      # mount) via a .env file or Portainer's stack environment-variables
+      # editor. Defaults below only work when the compose file's own
+      # directory is writable, which is not what you want on a shared
+      # Portainer host — see docs/deployment/portainer.md.
+      - ${CONFIG_HOST_PATH:-./config/alarm-core.example.yaml}:/config/alarm-core.yaml:ro
+      - ${ARCHIVE_HOST_PATH:-./data/archive}:/data/archive
+      - ${DB_HOST_PATH:-./data/db}:/data/db
+    ports:
+      # FastAPI health/API + static media, proxied by the HA add-on rather
+      # than exposed directly to the internet.
+      - "${API_PORT:-8090}:8090"
+    # NVIDIA GPU passthrough for Tier-1 local inference: uncomment once the
+    # NVIDIA Container Toolkit is installed on the host (in Portainer,
+    # equivalent "Runtime & Resources > GPU" support depends on your
+    # Portainer/Docker Engine version).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # alarm-media is folded into alarm-core's FastAPI static mount for now
+  # (see docs/adr/0004-archive-retention-design.md). Split into its own
+  # lightweight nginx service later if load warrants it.

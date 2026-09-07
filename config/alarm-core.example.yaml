@@ -1,0 +1,101 @@
+# User-tunable config for alarm-core: cameras, zones, suppression rules,
+# escalation policy. No secrets here (those go in .env) — safe to commit.
+#
+# Copy to config/alarm-core.yaml and fill in real Frigate camera names /
+# zone names / door-window entity IDs. See docs/clarifying-questions.md
+# for the exact values still needed.
+
+cameras:
+  # 4 Dahua cameras — color low-light capable, generally trustworthy.
+  - name: front_porch
+    frigate_camera: front_porch  # TODO: match your real Frigate config
+    zones: [front_porch]
+    kind: dahua_low_light
+    trust_bias: 1.0
+    is_doorbell: true
+  - name: driveway
+    frigate_camera: driveway  # TODO
+    zones: [driveway]
+    kind: dahua_low_light
+    trust_bias: 1.0
+  - name: backyard
+    frigate_camera: backyard  # TODO
+    zones: [backyard]
+    kind: dahua_low_light
+    trust_bias: 1.0
+  - name: side_yard
+    frigate_camera: side_yard  # TODO
+    zones: [side_yard]
+    kind: dahua_low_light
+    trust_bias: 1.0
+
+  # 4 cheap WiFi cameras — lower default trust (noisier sensors, weaker
+  # low-light handling). Adjust trust_bias per camera as you observe
+  # real false-positive/negative rates.
+  - name: side_gate
+    frigate_camera: side_gate  # TODO
+    zones: [side_gate]
+    kind: wifi_generic
+    trust_bias: 0.8
+  - name: garage
+    frigate_camera: garage  # TODO
+    zones: [garage]
+    kind: wifi_generic
+    trust_bias: 0.8
+  - name: back_gate
+    frigate_camera: back_gate  # TODO
+    zones: [back_gate]
+    kind: wifi_generic
+    trust_bias: 0.8
+  - name: shed
+    frigate_camera: shed  # TODO
+    zones: [shed]
+    kind: wifi_generic
+    trust_bias: 0.8
+
+# Zone+label+time-window suppression matrix. Evaluated in order; first
+# match wins. "*" matches anything.
+zone_rules:
+  # The literal false-positive case from the backlog.
+  - camera: "*"
+    zone: backyard
+    label: cat
+    decision: suppress
+  - camera: "*"
+    zone: "*"
+    label: bird
+    decision: suppress
+  # Front porch person while away is the clearest high-stakes case.
+  - camera: front_porch
+    zone: front_porch
+    label: person
+    decision: escalate
+    alarm_states: [armed_away, armed_night]
+  # Known commute pattern: suppress driveway car detections on weekday
+  # mornings while armed_home. Adjust the window to match your routine.
+  - camera: driveway
+    zone: driveway
+    label: car
+    decision: suppress
+    alarm_states: [armed_home]
+    time_window: "07:00-09:00"
+
+# Door/window contact sensors usable for forced-entry correlation.
+# TODO: fill in your real HA entity_ids.
+door_window_sensors:
+  - entity_id: binary_sensor.front_door_contact  # TODO
+    label: "front door"
+    camera: front_porch
+  - entity_id: binary_sensor.back_door_contact  # TODO
+    label: "back door"
+    camera: backyard
+
+escalation:
+  tier1_ambiguous_confidence_band: [0.4, 0.75]
+  sensitive_zones: [front_porch, driveway]
+  night_escalation_bias: 0.15
+  debounce_seconds: 60
+  # Clock-hour night window (local time) — widens escalation at night per
+  # docs/architecture.md. Adjust to your actual dusk/dawn.
+  night_start_hour: 20
+  night_end_hour: 7
